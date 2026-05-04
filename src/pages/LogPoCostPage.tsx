@@ -31,6 +31,7 @@ const ACTIVITY_COLOR: Record<string, string> = {
   UPDATE: "bg-blue-500/15 text-blue-700 border-blue-500/30",
   KEYEDIT: "bg-amber-500/15 text-amber-700 border-amber-500/30",
   DELETE: "bg-red-500/15 text-red-700 border-red-500/30",
+  EXPORT: "bg-violet-500/15 text-violet-700 border-violet-500/30",
 };
 
 function fmtDate(iso: string): string {
@@ -101,7 +102,29 @@ export default function LogPoCostPage() {
     }
     const { data, error } = await q;
     if (error) { toast({ title: "Export ผิดพลาด", description: error.message, variant: "destructive" }); return; }
-    const out = (data as LogRow[]).map(r => {
+    const exportedRows = (data as LogRow[]) || [];
+
+    // Log EXPORT activity
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const u = userData?.user;
+      await supabase.from("po_cost_log").insert({
+        activity: "EXPORT",
+        user_id: u?.id ?? null,
+        user_email: u?.email ?? null,
+        changes: {
+          rows_exported: { old: null, new: exportedRows.length },
+          filter_activity: { old: null, new: activityFilter },
+          filter_search: { old: null, new: search.trim() || null },
+        },
+      });
+      // Refresh list to show the new EXPORT entry
+      load();
+    } catch (e) {
+      console.error("Failed to log EXPORT", e);
+    }
+
+    const out = exportedRows.map(r => {
       const ch = renderChanges(r.changes);
       const moqCh = ch.find(c => c.col === "moq");
       const costCh = ch.find(c => c.col === "po_cost");
@@ -159,6 +182,7 @@ export default function LogPoCostPage() {
             <option value="UPDATE">Update</option>
             <option value="KEYEDIT">Keyedit</option>
             <option value="DELETE">Delete</option>
+            <option value="EXPORT">Export</option>
           </select>
 
           <Button size="sm" variant="outline" onClick={() => { setPage(0); load(); }} disabled={loading}>

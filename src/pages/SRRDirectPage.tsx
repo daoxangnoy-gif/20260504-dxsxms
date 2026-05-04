@@ -65,6 +65,7 @@ import { getLatestRangeStorePackBox } from "@/lib/rangeStorePackBox";
 import { SnapshotBatchPicker } from "@/components/SnapshotBatchPicker";
 import {
   buildSnapshotBatchesFromDocs,
+  deleteSnapshotDocuments,
   getSnapshotBatches,
   loadSnapshotBatch,
   mergeSnapshotBatches,
@@ -2090,18 +2091,19 @@ export default function SRRDirectPage() {
 
   // Doc management
   const deleteVendorDoc = async (docId: string) => {
-    setVendorDocs((prev) => prev.filter((d) => d.id !== docId));
+    const doc = vendorDocs.find((d) => d.id === docId);
+    if (!doc) return;
     try {
-      await deleteD2SSnapshot(docId);
-      // Refresh dropdown so deleted batch disappears immediately
-      try {
-        const batches = await getSnapshotBatches("srr_d2s_snapshots");
-        setSnapshotBatches(batches);
-      } catch {}
+      const result = await deleteSnapshotDocuments([doc], "srr_d2s_snapshots");
+      setVendorDocs((prev) => prev.filter((d) => d.id !== docId));
+      setShowData((prev) => prev.filter((r) => !doc.data.some((dr) => dr.id === r.id)));
+      setSelectedDocIds((prev) => { const n = new Set(prev); n.delete(docId); return n; });
+      const batches = await getSnapshotBatches("srr_d2s_snapshots");
+      setSnapshotBatches(batches);
+      toast({ title: "ลบ Document สำเร็จ", description: result.deleted === 0 ? "ลบออกจากหน้าจอแล้ว แต่ไม่พบแถวใน DB" : `ลบจาก DB ${result.deleted} รายการ` });
     } catch (e: any) {
-      console.error("DB delete failed:", e);
+      toast({ title: "ลบ Document ไม่สำเร็จ", description: e.message, variant: "destructive" });
     }
-    toast({ title: "ลบ Document สำเร็จ" });
   };
   // Mode-scoped: only act on docs of the currently active importMode
   const clearAllDocuments = async () => {
@@ -2111,25 +2113,20 @@ export default function SRRDirectPage() {
       toast({ title: "ไม่มี Document ใน Mode นี้" });
       return;
     }
-    const idSet = new Set(ids);
-    setVendorDocs((prev) => prev.filter((d) => !idSet.has(d.id)));
-    setShowData([]);
-    setSelectedDocIds((prev) => {
-      const n = new Set(prev);
-      ids.forEach((id) => n.delete(id));
-      return n;
-    });
     try {
-      await (supabase as any).from("srr_d2s_snapshots").delete().in("id", ids);
-      try {
-        const batches = await getSnapshotBatches("srr_d2s_snapshots");
-        setSnapshotBatches(batches);
-      } catch {}
+      const result = await deleteSnapshotDocuments(modeDocs, "srr_d2s_snapshots");
+      const idSet = new Set(ids);
+      setVendorDocs((prev) => prev.filter((d) => !idSet.has(d.id)));
+      setShowData([]);
+      setSelectedBatchValuesByMode((prev) => ({ ...prev, [importMode]: [] }));
+      setSelectedDocIds((prev) => { const n = new Set(prev); ids.forEach((id) => n.delete(id)); return n; });
+      const batches = await getSnapshotBatches("srr_d2s_snapshots");
+      setSnapshotBatches(batches);
+      const modeLabel = importMode === "filter" ? "Filter" : importMode === "vendor" ? "Import Vendor" : "Import SKU";
+      toast({ title: `ล้าง Document (${modeLabel}) แล้ว`, description: `ลบจาก DB ${result.deleted}/${result.requested} รายการ` });
     } catch (e: any) {
-      console.error(e);
+      toast({ title: "ล้าง Document ไม่สำเร็จ", description: e.message, variant: "destructive" });
     }
-    const modeLabel = importMode === "filter" ? "Filter" : importMode === "vendor" ? "Import Vendor" : "Import SKU";
-    toast({ title: `ล้าง Document (${modeLabel}) แล้ว`, description: `ลบ ${ids.length} รายการ` });
   };
   const selectAllDocs = () => {
     const modeIds = vendorDocs.filter((d) => (d.source || "filter") === importMode).map((d) => d.id);
@@ -2158,24 +2155,19 @@ export default function SRRDirectPage() {
     const modeIdSet = new Set(vendorDocs.filter((d) => (d.source || "filter") === importMode).map((d) => d.id));
     const ids = [...selectedDocIds].filter((id) => modeIdSet.has(id));
     if (ids.length === 0) return;
-    const count = ids.length;
-    const idSet = new Set(ids);
-    setVendorDocs((prev) => prev.filter((d) => !idSet.has(d.id)));
-    setSelectedDocIds((prev) => {
-      const n = new Set(prev);
-      ids.forEach((id) => n.delete(id));
-      return n;
-    });
+    const docs = vendorDocs.filter((d) => ids.includes(d.id));
     try {
-      await (supabase as any).from("srr_d2s_snapshots").delete().in("id", ids);
-      try {
-        const batches = await getSnapshotBatches("srr_d2s_snapshots");
-        setSnapshotBatches(batches);
-      } catch {}
+      const result = await deleteSnapshotDocuments(docs, "srr_d2s_snapshots");
+      const idSet = new Set(ids);
+      setVendorDocs((prev) => prev.filter((d) => !idSet.has(d.id)));
+      setShowData((prev) => prev.filter((r) => !docs.some((doc) => doc.data.some((dr) => dr.id === r.id))));
+      setSelectedDocIds((prev) => { const n = new Set(prev); ids.forEach((id) => n.delete(id)); return n; });
+      const batches = await getSnapshotBatches("srr_d2s_snapshots");
+      setSnapshotBatches(batches);
+      toast({ title: "ลบ Document สำเร็จ", description: `ลบจาก DB ${result.deleted}/${result.requested} รายการ` });
     } catch (e: any) {
-      console.error(e);
+      toast({ title: "ลบ Document ไม่สำเร็จ", description: e.message, variant: "destructive" });
     }
-    toast({ title: "ลบ Document สำเร็จ", description: `ลบ ${count} เอกสาร` });
   };
 
   // Show filtered (sort by Store Name > Vendor) — scoped to Tab 2's mode (filter / vendor / import)

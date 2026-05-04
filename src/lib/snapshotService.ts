@@ -317,6 +317,58 @@ export async function deleteSnapshot(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function deleteSnapshotsByIds(
+  ids: string[],
+  table: "srr_snapshots" | "srr_d2s_snapshots" = "srr_snapshots"
+): Promise<{ requested: number; deleted: number }> {
+  let deleted = 0;
+  const chunkSize = 200;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const { error, count } = await (supabase as any)
+      .from(table)
+      .delete({ count: "exact" })
+      .in("id", chunk);
+    if (error) throw error;
+    deleted += count ?? 0;
+  }
+  return { requested: ids.length, deleted };
+}
+
+export async function deleteSnapshotDocuments(
+  docs: { id: string; date_key: string; spc_name: string; vendor_code: string; source?: "filter" | "vendor" | "import"; created_at?: string; store_name?: string }[],
+  table: "srr_snapshots" | "srr_d2s_snapshots" = "srr_snapshots"
+): Promise<{ requested: number; deleted: number }> {
+  const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+  let deleted = 0;
+  for (const doc of docs) {
+    if (isUuid(doc.id)) {
+      const { error, count } = await (supabase as any).from(table).delete({ count: "exact" }).eq("id", doc.id);
+      if (error) throw error;
+      deleted += count ?? 0;
+      if ((count ?? 0) > 0) continue;
+    }
+    const createdAt = doc.created_at ? new Date(doc.created_at) : null;
+    let q = (supabase as any)
+      .from(table)
+      .delete({ count: "exact" })
+      .eq("date_key", normalizeDateKey(doc.date_key))
+      .eq("spc_name", doc.spc_name)
+      .eq("source", doc.source || "filter")
+      .eq("vendor_code", doc.vendor_code);
+    if (table === "srr_d2s_snapshots" && doc.store_name) q = q.eq("store_name", doc.store_name);
+    if (createdAt && !isNaN(createdAt.getTime())) {
+      const start = new Date(createdAt); start.setSeconds(0, 0);
+      const end = new Date(start.getTime() + 60_000);
+      q = q.gte("created_at", start.toISOString()).lt("created_at", end.toISOString());
+    }
+    const { error, count } = await q;
+    if (error) throw error;
+    deleted += count ?? 0;
+  }
+  return { requested: docs.length, deleted };
+}
+
 // Cleanup old snapshots (> 30 days)
 export async function cleanupOldSnapshots(): Promise<number> {
   const { data, error } = await supabase.rpc("cleanup_old_snapshots");

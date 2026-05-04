@@ -29,6 +29,7 @@ import {
   Save, Eye, Clock,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface DataControlPageProps {
   activeTable: AllTableName;
@@ -37,6 +38,7 @@ interface DataControlPageProps {
 const ALL_OPERATORS: FilterOperator[] = ["contains", "=", "!=", "starts_with", "ends_with", "is_set", "is_not_set"];
 
 export default function DataControlPage({ activeTable }: DataControlPageProps) {
+  const { isAdmin } = useAuth();
   const isPlaceholder = activeTable === "range_store";
   const safeTable = isPlaceholder ? "data_master" : activeTable as TableName;
 
@@ -748,26 +750,28 @@ export default function DataControlPage({ activeTable }: DataControlPageProps) {
             </PopoverContent>
           </Popover>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="text-xs">
-                <Download className="w-3.5 h-3.5 mr-1" /> Export
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => exportData()}>
-                <Download className="w-3.5 h-3.5 mr-2" /> Export ทั้งหมด
-              </DropdownMenuItem>
-              {selectedRows.size > 0 && (
-                <DropdownMenuItem onClick={() => exportData(Array.from(selectedRows))}>
-                  <CheckSquare className="w-3.5 h-3.5 mr-2" /> Export ที่เลือก ({selectedRows.size})
+          {isAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="text-xs">
+                  <Download className="w-3.5 h-3.5 mr-1" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => exportData()}>
+                  <Download className="w-3.5 h-3.5 mr-2" /> Export ทั้งหมด
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={exportTemplate}>
-                <FileSpreadsheet className="w-3.5 h-3.5 mr-2" /> Export Template
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {selectedRows.size > 0 && (
+                  <DropdownMenuItem onClick={() => exportData(Array.from(selectedRows))}>
+                    <CheckSquare className="w-3.5 h-3.5 mr-2" /> Export ที่เลือก ({selectedRows.size})
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={exportTemplate}>
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-2" /> Export Template
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <Button size="sm" variant="outline" onClick={() => { setGroupCol(""); setValueCol(""); setAggType("count"); setGroupResult(null); setGroupDialogOpen(true); }} className="text-xs">
             <BarChart3 className="w-3.5 h-3.5 mr-1" /> Pivot
           </Button>
@@ -777,14 +781,16 @@ export default function DataControlPage({ activeTable }: DataControlPageProps) {
           <Button size="sm" variant="outline" onClick={clearUI} className="text-xs">
             <XCircle className="w-3.5 h-3.5 mr-1" /> Clear
           </Button>
-          {selectedRows.size > 0 && (
+          {isAdmin && selectedRows.size > 0 && (
             <Button size="sm" variant="destructive" onClick={deleteSelected} className="text-xs">
               <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected ({selectedRows.size})
             </Button>
           )}
-          <Button size="sm" variant="destructive" onClick={deleteAll} className="text-xs">
-            <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete All
-          </Button>
+          {isAdmin && (
+            <Button size="sm" variant="destructive" onClick={deleteAll} className="text-xs">
+              <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete All
+            </Button>
+          )}
         </div>
       </div>
 

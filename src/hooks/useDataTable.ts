@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { TableName, TABLE_COLUMNS, COLUMN_LABELS, getColumnLabel, TABLE_UNIQUE_KEY } from "@/lib/tableConfig";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +42,16 @@ export function useDataTable(tableName: TableName) {
   const pageSize = 30;
 
   const columns = TABLE_COLUMNS[tableName];
+
+  // Reset search/filter state when switching to a different table (menu)
+  useEffect(() => {
+    setSearchValue("");
+    setSearchColumns([]);
+    setFilters([]);
+    setPage(0);
+    setEditingRow(null);
+    setEditedData({});
+  }, [tableName]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -270,6 +280,25 @@ export function useDataTable(tableName: TableName) {
       XLSX.utils.book_append_sheet(wb, ws, tableName);
       XLSX.writeFile(wb, `${tableName}_export.xlsx`);
       toast({ title: "Export สำเร็จ", description: `${allData.length} แถว` });
+
+      // Log EXPORT activity for po_cost table
+      if (tableName === "po_cost") {
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          const u = userData?.user;
+          await supabase.from("po_cost_log").insert({
+            activity: "EXPORT",
+            user_id: u?.id ?? null,
+            user_email: u?.email ?? null,
+            changes: {
+              rows_exported: { old: null, new: allData.length },
+              scope: { old: null, new: selectedIds && selectedIds.length > 0 ? "selected" : "all" },
+            },
+          });
+        } catch (e) {
+          console.error("Failed to log po_cost EXPORT", e);
+        }
+      }
     } catch (err: any) {
       toast({ title: "Export Error", description: err.message, variant: "destructive" });
     }

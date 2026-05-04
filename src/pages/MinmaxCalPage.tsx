@@ -535,30 +535,74 @@ export default function MinmaxCalPage() {
     loadDocs();
   };
 
-  const exportDoc = (doc: DocRow) => {
+  const exportDoc = async (doc: DocRow) => {
     const data = (doc.data || []) as any[];
-    const sheet = data.map(r => ({
-      "SKU Code": r.sku_code,
-      "Product Name (LA)": r.product_name_la,
-      "Product Name (EN)": r.product_name_en,
-      "Barcode": r.main_barcode,
-      "UoM": r.unit_of_measure,
-      "Store Name": r.store_name,
-      "Type Store": r.type_store,
-      "Size Store": r.size_store,
-      "Item Type": r.item_type,
-      "Buying Status": r.buying_status,
-      "Unit Pick": r.unit_pick,
-      "Avg Sale": r.avg_sale,
-      "Rank": r.rank_sale,
-      "Min Cal": r.min_cal,
-      "Max Cal": r.max_cal,
-      "Min Edit": r.min_edit,
-      "Max Edit": r.max_edit,
-      "Min": r.min_final,
-      "Max": r.max_final,
-    }));
+    // Collect unique sku_codes to fetch master enrichment
+    const skuSet = [...new Set(data.map(r => String(r.sku_code || "")).filter(Boolean))];
+    const masterMap = new Map<string, any>();
+    // Batch fetch data_master in chunks of 500 to avoid URL limit
+    try {
+      for (let i = 0; i < skuSet.length; i += 500) {
+        const chunk = skuSet.slice(i, i + 500);
+        const { data: rows } = await supabase
+          .from("data_master")
+          .select("sku_code,division_group,division,department,sub_department,class,sub_class,vendor_code,vendor_display_name")
+          .in("sku_code", chunk);
+        (rows || []).forEach((m: any) => masterMap.set(String(m.sku_code), m));
+      }
+    } catch (e) {
+      console.warn("exportDoc: master fetch failed", e);
+    }
+    const sheet = data.map(r => {
+      const m = masterMap.get(String(r.sku_code)) || {};
+      return {
+        "SKU Code": r.sku_code,
+        "Product Name (LA)": r.product_name_la,
+        "Product Name (EN)": r.product_name_en,
+        "Barcode": r.main_barcode,
+        "UoM": r.unit_of_measure,
+        "Division Group": m.division_group ?? "",
+        "Division": m.division ?? "",
+        "Department": m.department ?? "",
+        "Sub-Department": m.sub_department ?? "",
+        "Class": m.class ?? "",
+        "Sub-Class": m.sub_class ?? "",
+        "seller_ids/vendor_code": m.vendor_code ?? "",
+        "seller_ids/display_name": m.vendor_display_name ?? "",
+        "Store Name": r.store_name,
+        "Type Store": r.type_store,
+        "Size Store": r.size_store,
+        "Item Type": r.item_type,
+        "Buying Status": r.buying_status,
+        "Unit Pick": r.unit_pick,
+        "Avg Sale": r.avg_sale,
+        "Rank": r.rank_sale,
+        "Min Cal": r.min_cal,
+        "Max Cal": r.max_cal,
+        "Min Edit": r.min_edit,
+        "Max Edit": r.max_edit,
+        "Min": r.min_final,
+        "Max": r.max_final,
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(sheet);
+    // Force "SKU Code" + "Barcode" columns to text to preserve leading zeros
+    const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+    const header = sheet[0] ? Object.keys(sheet[0]) : [];
+    const textCols = ["SKU Code", "Barcode", "seller_ids/vendor_code"];
+    textCols.forEach(name => {
+      const colIdx = header.indexOf(name);
+      if (colIdx < 0) return;
+      for (let R = 1; R <= range.e.r; R++) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: colIdx });
+        const cell = ws[addr];
+        if (cell && cell.v != null && cell.v !== "") {
+          cell.t = "s";
+          cell.v = String(cell.v);
+          cell.z = "@";
+        }
+      }
+    });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "MinMax");
     XLSX.writeFile(wb, `${doc.doc_name}.xlsx`);

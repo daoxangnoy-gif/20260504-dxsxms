@@ -41,7 +41,6 @@ export const SRR_SUB_MENUS = [
   { key: "direct_item", label: "SRR DIRECT ITEM" },
   { key: "special_order", label: "Special Order" },
   { key: "order_b2b", label: "Order B2B" },
-  { key: "help", label: "คู่มือการใช้งาน" },
 ];
 
 // Column display configs per table (excluding id, created_at, updated_at)
